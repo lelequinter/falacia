@@ -1,0 +1,39 @@
+{
+  "activeId": "1",
+  "items": [
+    {
+      "id": "1",
+      "name": "Respuesta Exitosa",
+      "statusCode": 200,
+      "data": {
+        "id": 1234212,
+        "success": true
+      }
+    },
+    {
+      "id": "2",
+      "name": "Error de Servidor",
+      "statusCode": 500,
+      "data": {
+        "error": "Internal Server Error"
+      }
+    },
+    {
+      "id": "1791856615676",
+      "name": "respuesta test",
+      "statusCode": 200,
+      "data": {
+        "id": 555,
+        "mensaje": "test"
+      }
+    },
+    {
+      "id": "1791856853397",
+      "name": "formulario mal",
+      "statusCode": 400,
+      "data": {
+        "error": "Datos invalidos"
+      }
+    }
+  ]
+}
