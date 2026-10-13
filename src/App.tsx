@@ -11,8 +11,7 @@ import {
 
 import { MockCard, type MockItem } from './components/MockCard';
 import { MockFormModal } from './components/MockFormModal';
-import { StepFunctionView, type Column } from './components/StepFuncionView';
-// import { StepFunctionView, Column } from './components/StepFunctionView';
+import { StepFunctionView, type Column } from './components/StepFunctionView';
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text } = Typography;
@@ -139,13 +138,20 @@ function MainLayout() {
   };
 
   // Actualizar columnas (cuando se reordenan tarjetas vertical/horizontalmente o se crean/eliminan columnas)
+  // Actualizar todo el arreglo de columnas de golpe al arrastrar y soltar
   const handleUpdateColumns = async (newColumns: Column[]) => {
-    await saveDbToBackend({ ...db, columns: newColumns });
+    const updatedDb = { ...db, columns: newColumns };
+    setDb(updatedDb);
+    await fetch('http://localhost:3030/admin/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedDb),
+    });
   };
 
   const routeTitles = {
     mocks: 'Gestor de Respuestas Mock',
-    step2: 'Tablero Step Function (Kanban)',
+    step2: 'Tablero Step Function',
   };
 
   return (
@@ -243,7 +249,13 @@ function MainLayout() {
                 setTargetColumnId(colId);
                 setIsModalOpen(true);
               }}
+              onOpenEditModal={(itemToEdit) => {
+                setEditingItem(itemToEdit);
+                setTargetColumnId(null);
+                setIsModalOpen(true);
+              }}
               onSelectActive={handleSelectActive}
+              onDeleteGlobalItem={handleDelete}
             />
           )}
         </Content>
