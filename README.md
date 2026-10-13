@@ -1,5 +1,7 @@
 # React + TypeScript + Vite
 
+Este proyecto busca tener un Mocker mas amigable en UI y UX, y ademas crear una manera mas facil de ver que respuesta ha sido seleccionada y visualizarla dentro de un flujo de step funcion
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

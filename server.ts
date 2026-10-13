@@ -3,22 +3,37 @@ import { cors } from '@elysiajs/cors';
 
 const FILE_PATH = './responses.json';
 
-// Utilidad para leer el archivo JSON de forma segura
+// Estructura por defecto inicial si no existe el archivo
+const DEFAULT_DB = {
+  activeId: '',
+  items: [],
+  columns: [
+    { id: 'col-1', name: 'Paso 1: General', cardIds: [] }
+  ]
+};
+
 async function getDb() {
   const file = Bun.file(FILE_PATH);
   if (!(await file.exists())) {
-    // Si no existe, creamos uno por defecto
-    const initial = { activeId: '', items: [] };
-    await Bun.write(FILE_PATH, JSON.stringify(initial, null, 2));
-    return initial;
+    await Bun.write(FILE_PATH, JSON.stringify(DEFAULT_DB, null, 2));
+    return DEFAULT_DB;
   }
-  return await file.json();
+  try {
+    const data = await file.json();
+    // Asegurarnos de que siempre tenga la propiedad columns
+    if (!data.columns) {
+      data.columns = DEFAULT_DB.columns;
+    }
+    return data;
+  } catch (e) {
+    return DEFAULT_DB;
+  }
 }
 
 const app = new Elysia()
   .use(cors())
 
-  // 1. Endpoint ÚNICO que consume tu app principal
+  // Endpoint único que consume tu app principal para obtener el mock activo
   .all('/api/target', async ({ set }) => {
     const db = await getDb();
     const activeMock = db.items.find((m: any) => m.id === db.activeId);
@@ -32,14 +47,12 @@ const app = new Elysia()
     return activeMock.data;
   })
 
-  // --- Endpoints auxiliares para que tu panel frontend administre el JSON ---
-  
-  // Obtener todo (el listado y cuál está activo)
+  // Obtener todo (items, columns y activeId) para el panel administrador
   .get('/admin/data', async () => {
     return await getDb();
   })
 
-  // Actualizar todo el archivo (ideal para cuando el front guarda, edita, borra o cambia el activo)
+  // Guardar la estructura completa (ideal para Kanban y Mocks)
   .post('/admin/data', async ({ body }) => {
     await Bun.write(FILE_PATH, JSON.stringify(body, null, 2));
     return { success: true };

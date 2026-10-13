@@ -34,6 +34,50 @@
       "data": {
         "error": "Datos invalidos"
       }
+    },
+    {
+      "id": "1791861094936",
+      "name": "mal los datos",
+      "statusCode": 400,
+      "data": {
+        "mensaje": "Respuesta datos mal"
+      }
+    },
+    {
+      "id": "1791861145676",
+      "name": "otro test",
+      "statusCode": 200,
+      "data": {
+        "id": 1234212,
+        "mensaje": "Respuesta test"
+      }
+    },
+    {
+      "id": "1791861547379",
+      "name": "pruebita",
+      "statusCode": 200,
+      "data": {
+        "id": 1234212,
+        "mensaje": "Respuesta correcta"
+      }
+    }
+  ],
+  "columns": [
+    {
+      "id": "col-1",
+      "name": "Paso 1: Validación",
+      "cardIds": [
+        "1",
+        "2"
+      ]
+    },
+    {
+      "id": "col-1791861570280",
+      "name": "segundo paso",
+      "cardIds": [
+        "1791856853397",
+        "1"
+      ]
     }
   ]
 }

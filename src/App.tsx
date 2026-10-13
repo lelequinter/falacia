@@ -1,34 +1,50 @@
 import { useState, useEffect } from 'react';
-import './App.css';
+import { Layout, Menu, Button, Typography, Tag, Space, message, App as AntApp } from 'antd';
+import {
+  ApiOutlined,
+  AppstoreOutlined,
+  SwapOutlined,
+  PlusOutlined,
+  MenuUnfoldOutlined,
+  MenuFoldOutlined
+} from '@ant-design/icons';
 
-interface MockItem {
-  id: string;
-  name: string;
-  statusCode: number;
-  data: any;
-}
+import { MockCard, type MockItem } from './components/MockCard';
+import { MockFormModal } from './components/MockFormModal';
+import { StepFunctionView, type Column } from './components/StepFuncionView';
+// import { StepFunctionView, Column } from './components/StepFunctionView';
+
+const { Header, Sider, Content } = Layout;
+const { Title, Text } = Typography;
 
 interface DbSchema {
   activeId: string;
   items: MockItem[];
+  columns: Column[];
 }
 
-export default function App() {
-  const [db, setDb] = useState<DbSchema>({ activeId: '', items: [] });
-  
-  const [name, setName] = useState('');
-  const [statusCode, setStatusCode] = useState<number>(200);
-  // Estado inicial completamente limpio con espacios estándar de teclado
-  const [jsonInput, setJsonInput] = useState('{\n  "id": 1234212,\n  "mensaje": "Respuesta correcta"\n}');
-  const [error, setError] = useState('');
+function MainLayout() {
+  const [collapsed, setCollapsed] = useState(false);
+  const [currentRoute, setCurrentRoute] = useState<'mocks' | 'step2'>('mocks');
+
+  const [db, setDb] = useState<DbSchema>({ activeId: '', items: [], columns: [] });
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<MockItem | null>(null);
+
+  // Estado para saber si estamos creando una tarjeta dentro de una columna específica del Kanban
+  const [targetColumnId, setTargetColumnId] = useState<string | null>(null);
 
   const fetchData = async () => {
     try {
       const res = await fetch('http://localhost:3030/admin/data');
       const data = await res.json();
-      setDb(data);
+      setDb({
+        activeId: data.activeId || '',
+        items: data.items || [],
+        columns: data.columns || [{ id: 'col-1', name: 'Paso 1: General', cardIds: [] }]
+      });
     } catch (err) {
-      console.error('Error al conectar con el servidor mock:', err);
+      console.error('Error al conectar con el servidor:', err);
     }
   };
 
@@ -36,170 +52,217 @@ export default function App() {
     fetchData();
   }, []);
 
-  const saveDbToBackend = async (updatedDb: DbSchema) => {
+  const saveDbToBackend = async (updatedDb: DbSchema, successMsg?: string) => {
     await fetch('http://localhost:3030/admin/data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedDb),
     });
     setDb(updatedDb);
+    if (successMsg) message.success(successMsg);
   };
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      // Limpiamos caracteres invisibles comunes de copiado por si acaso
-      const cleanInput = jsonInput.replace(/[\u200B-\u200D\uFEFF]/g, '');
-      const parsedData = JSON.parse(cleanInput);
-      setError('');
-
+  const handleCreateOrUpdate = async (values: { name: string; statusCode: number; data: any }) => {
+    if (editingItem) {
+      const updatedItems = db.items.map(i =>
+        i.id === editingItem.id ? { ...i, ...values } : i
+      );
+      await saveDbToBackend({ ...db, items: updatedItems }, '¡Mock actualizado correctamente!');
+    } else {
       const newItem: MockItem = {
         id: Date.now().toString(),
-        name,
-        statusCode: Number(statusCode),
-        data: parsedData,
+        ...values
       };
-
       const updatedItems = [...db.items, newItem];
       const updatedActiveId = db.activeId || newItem.id;
 
-      await saveDbToBackend({ activeId: updatedActiveId, items: updatedItems });
+      // Creamos una copia profunda limpia de las columnas
+      let updatedColumns = db.columns.map(col => ({
+        ...col,
+        cardIds: [...col.cardIds]
+      }));
 
-      setName('');
-      setJsonInput('{\n  \n}');
-    } catch (err: any) {
-      setError(`JSON inválido: ${err.message}`);
+      if (targetColumnId) {
+        updatedColumns = updatedColumns.map(col => {
+          if (col.id === targetColumnId) {
+            return { ...col, cardIds: [...col.cardIds, newItem.id] };
+          }
+          return col;
+        });
+      } else if (updatedColumns.length > 0) {
+        updatedColumns[0] = {
+          ...updatedColumns[0],
+          cardIds: [...updatedColumns[0].cardIds, newItem.id]
+        };
+      }
+
+      const newDbState = {
+        activeId: updatedActiveId,
+        items: updatedItems,
+        columns: updatedColumns
+      };
+
+      // Actualizamos estado local y backend de forma sincronizada
+      setDb(newDbState);
+      await fetch('http://localhost:3030/admin/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newDbState),
+      });
+
+      message.success('¡Mock creado y asignado con éxito!');
     }
+
+    setIsModalOpen(false);
+    setTargetColumnId(null);
   };
 
   const handleSelectActive = async (id: string) => {
-    await saveDbToBackend({ ...db, activeId: id });
+    if (id === db.activeId) return;
+    await saveDbToBackend({ ...db, activeId: id }, '¡Respuesta activa actualizada!');
   };
 
   const handleDelete = async (id: string) => {
     const updatedItems = db.items.filter(item => item.id !== id);
     let updatedActiveId = db.activeId;
-
     if (db.activeId === id) {
       updatedActiveId = updatedItems.length > 0 ? updatedItems[0].id : '';
     }
 
-    await saveDbToBackend({ activeId: updatedActiveId, items: updatedItems });
+    // Remover también el ID de las tarjetas de cualquier columna en el tablero Kanban
+    const updatedColumns = db.columns.map(col => ({
+      ...col,
+      cardIds: col.cardIds.filter(cardId => cardId !== id)
+    }));
+
+    await saveDbToBackend({ activeId: updatedActiveId, items: updatedItems, columns: updatedColumns }, 'Mock eliminado');
+  };
+
+  // Actualizar columnas (cuando se reordenan tarjetas vertical/horizontalmente o se crean/eliminan columnas)
+  const handleUpdateColumns = async (newColumns: Column[]) => {
+    await saveDbToBackend({ ...db, columns: newColumns });
+  };
+
+  const routeTitles = {
+    mocks: 'Gestor de Respuestas Mock',
+    step2: 'Tablero Step Function (Kanban)',
   };
 
   return (
-    <div style={{ maxWidth: '960px', margin: '0 auto', padding: '2rem', fontFamily: 'sans-serif', textAlign: 'left' }}>
-      <h1>🎯 Panel de Mocks (Guardado en `responses.json`)</h1>
-      <p>Crea, edita y selecciona al instante la respuesta que enviará tu único endpoint de backend.</p>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginTop: '2rem' }}>
-        
-        {/* Formulario de Creación */}
-        <div style={{ background: '#f9fafb', padding: '1.5rem', borderRadius: '8px', border: '1px solid #e5e7eb', color: '#111' }}>
-          <h3>Nueva Respuesta Mock</h3>
-          <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '0.3rem' }}>Nombre identificador:</label>
-              <input 
-                type="text" 
-                value={name} 
-                onChange={e => setName(e.target.value)} 
-                placeholder="Ej. Usuario No Encontrado" 
-                required 
-                style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '0.3rem' }}>Código HTTP (Status Code):</label>
-              <input 
-                type="number" 
-                value={statusCode} 
-                onChange={e => setStatusCode(Number(e.target.value))} 
-                required 
-                style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '0.3rem' }}>Cuerpo de Respuesta (JSON):</label>
-              <textarea 
-                rows={7} 
-                value={jsonInput} 
-                onChange={e => setJsonInput(e.target.value)} 
-                style={{ width: '100%', fontFamily: 'monospace', padding: '0.5rem', boxSizing: 'border-box' }}
-              />
-              {error && <span style={{ color: 'red', fontSize: '0.75rem', display: 'block', marginTop: '0.2rem' }}>{error}</span>}
-            </div>
-
-            <button type="submit" style={{ background: '#2563eb', color: 'white', padding: '0.75rem', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-              Guardar en responses.json
-            </button>
-          </form>
-        </div>
-
-        {/* Tarjetas / Listado de Opciones */}
-        <div>
-          <h3>Respuestas Guardadas</h3>
-          <p style={{ fontSize: '0.85rem', color: '#666' }}>Selecciona cuál deseas que responda tu servidor en tiempo real.</p>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '500px', overflowY: 'auto' }}>
-            {db.items.length === 0 ? (
-              <p style={{ color: '#888', fontStyle: 'italic' }}>No hay respuestas creadas todavía.</p>
-            ) : (
-              db.items.map(item => {
-                const isActive = item.id === db.activeId;
-                return (
-                  <div 
-                    key={item.id} 
-                    style={{ 
-                      border: isActive ? '2px solid #2563eb' : '1px solid #d1d5db', 
-                      background: isActive ? '#eff6ff' : '#fff',
-                      color: '#111',
-                      padding: '1rem', 
-                      borderRadius: '8px',
-                      position: 'relative'
-                    }}
-                  >
-                    {isActive && (
-                      <span style={{ position: 'absolute', top: '10px', right: '10px', background: '#2563eb', color: 'white', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
-                        ACTIVA
-                      </span>
-                    )}
-                    
-                    <h4 style={{ margin: '0 0 0.4rem 0' }}>{item.name}</h4>
-                    <div style={{ fontSize: '0.8rem', marginBottom: '0.5rem' }}>
-                      Status: <strong>{item.statusCode}</strong>
-                    </div>
-
-                    <pre style={{ background: '#1e1e1e', color: '#d4d4d4', padding: '0.5rem', borderRadius: '4px', fontSize: '0.75rem', overflowX: 'auto', maxHeight: '100px' }}>
-                      {JSON.stringify(item.data, null, 2)}
-                    </pre>
-
-                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.8rem' }}>
-                      {!isActive && (
-                        <button 
-                          onClick={() => handleSelectActive(item.id)}
-                          style={{ background: '#10b981', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
-                        >
-                          Elegir como respuesta
-                        </button>
-                      )}
-                      <button 
-                        onClick={() => handleDelete(item.id)}
-                        style={{ background: '#ef4444', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}
-                      >
-                        Eliminar
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
+    <Layout style={{ minHeight: '100vh' }}>
+      <Sider
+        trigger={null}
+        collapsible
+        collapsed={collapsed}
+        theme="light"
+        style={{ borderRight: '1px solid #e2e8f0' }}
+      >
+        <div style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ background: '#2563eb', padding: '8px', borderRadius: '8px', color: '#fff', display: 'flex' }}>
+            <ApiOutlined style={{ fontSize: '20px' }} />
           </div>
+          {!collapsed && <span style={{ fontWeight: 800, fontSize: '16px', color: '#0f172a' }}>MockStudio</span>}
         </div>
 
-      </div>
-    </div>
+        <Menu
+          theme="light"
+          mode="inline"
+          selectedKeys={[currentRoute]}
+          onClick={({ key }) => setCurrentRoute(key as 'mocks' | 'step2')}
+          items={[
+            {
+              key: 'mocks',
+              icon: <AppstoreOutlined />,
+              label: 'Respuestas',
+            },
+            {
+              key: 'step2',
+              icon: <SwapOutlined />,
+              label: 'Step Function',
+            },
+          ]}
+        />
+      </Sider>
+
+      <Layout>
+        <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0' }}>
+          <Space size="middle">
+            <Button
+              type="text"
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setCollapsed(!collapsed)}
+              style={{ fontSize: '16px' }}
+            />
+            <Title level={4} style={{ margin: 0, fontWeight: 700, color: '#0f172a' }}>
+              {routeTitles[currentRoute]}
+            </Title>
+          </Space>
+
+          {currentRoute === 'mocks' && (
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              size="large"
+              onClick={() => { setEditingItem(null); setTargetColumnId(null); setIsModalOpen(true); }}
+              style={{ background: '#2563eb', borderRadius: '8px', fontWeight: 600 }}
+            >
+              Crear Respuesta
+            </Button>
+          )}
+        </Header>
+
+        <Content style={{ padding: '24px', background: '#f8fafc', minHeight: '280px' }}>
+          {currentRoute === 'mocks' ? (
+            <div>
+              <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text type="secondary">Selecciona con un clic la respuesta que responderá tu servidor.</Text>
+                <Tag color="blue">Total: {db.items.length}</Tag>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', width: '100%' }}>
+                {db.items.map(item => (
+                  <MockCard
+                    key={item.id}
+                    item={item}
+                    isActive={item.id === db.activeId}
+                    onSelect={handleSelectActive}
+                    onEdit={(itemToEdit) => { setEditingItem(itemToEdit); setTargetColumnId(null); setIsModalOpen(true); }}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <StepFunctionView
+              columns={db.columns}
+              items={db.items}
+              activeId={db.activeId}
+              onUpdateColumns={handleUpdateColumns}
+              onOpenCreateInColumn={(colId) => {
+                setEditingItem(null);
+                setTargetColumnId(colId);
+                setIsModalOpen(true);
+              }}
+              onSelectActive={handleSelectActive}
+            />
+          )}
+        </Content>
+      </Layout>
+
+      <MockFormModal
+        isOpen={isModalOpen}
+        editingItem={editingItem}
+        onClose={() => { setIsModalOpen(false); setTargetColumnId(null); }}
+        onSubmit={handleCreateOrUpdate}
+      />
+    </Layout>
+  );
+}
+
+export default function App() {
+  return (
+    <AntApp>
+      <MainLayout />
+    </AntApp>
   );
 }
